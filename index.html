@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="宮崎正弘">
+  <link rel="manifest" href="manifest.json">
+  <title>宮崎正弘 音声ライブラリ</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --bg: #0b0f1c; --surface: #151b2e; --surface2: #1c2540;
+      --gold: #c9a84c; --gold2: #e8c97a; --text: #eef2f7; --muted: #7a8ba0;
+      --playing-bg: #0f2a1a; --playing-border: #2a7a4a;
+      --radius: 14px;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    html,body { height: 100%; }
+    body { font-family: -apple-system,'Hiragino Sans','Yu Gothic',sans-serif; background: var(--bg); color: var(--text); max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; min-height: 100%; }
+    .screen { display: none; flex-direction: column; flex: 1; }
+    .screen.active { display: flex; }
+
+    /* Settings */
+    #screen-settings { justify-content: center; align-items: center; padding: calc(var(--safe-top) + 32px) 24px 32px; }
+    .settings-card { background: var(--surface); border: 1px solid rgba(201,168,76,.3); border-radius: var(--radius); padding: 28px 24px; width: 100%; max-width: 420px; }
+    .settings-logo { text-align: center; margin-bottom: 24px; }
+    .settings-logo h1 { font-size: 20px; font-weight: 700; color: var(--gold); letter-spacing: .05em; }
+    .settings-logo p { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 12px; color: var(--gold); font-weight: 600; margin-bottom: 6px; letter-spacing: .04em; }
+    .field input { width: 100%; background: var(--surface2); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; color: var(--text); font-size: 13px; padding: 10px 12px; outline: none; -webkit-appearance: none; }
+    .field input:focus { border-color: var(--gold); }
+    .field .hint { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+    .btn-primary { width: 100%; background: linear-gradient(135deg,#b8902a,#e8c97a); color: #0b0f1c; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; padding: 13px; cursor: pointer; margin-top: 8px; letter-spacing: .03em; }
+    .btn-primary:active { opacity: .85; }
+
+    /* Login */
+    #screen-login { justify-content: center; align-items: center; padding: 32px 24px; }
+    .login-card { background: var(--surface); border: 1px solid rgba(201,168,76,.3); border-radius: var(--radius); padding: 40px 28px; width: 100%; max-width: 420px; text-align: center; }
+    .login-title { font-size: 28px; font-weight: 700; color: var(--gold); letter-spacing: .08em; }
+    .login-subtitle { font-size: 13px; color: var(--muted); margin: 6px 0 32px; line-height: 1.8; }
+    .btn-google { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; background: #fff; color: #333; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; padding: 13px; cursor: pointer; }
+    .btn-google:active { opacity: .9; }
+    .btn-link { background: none; border: none; color: var(--muted); font-size: 12px; cursor: pointer; margin-top: 16px; text-decoration: underline; }
+
+    /* Main */
+    .header { background: var(--surface); border-bottom: 1px solid rgba(201,168,76,.2); padding: calc(var(--safe-top)+12px) 16px 12px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+    .header-title { font-size: 16px; font-weight: 700; color: var(--gold); letter-spacing: .04em; }
+    .header-sub { font-size: 10px; color: var(--muted); margin-top: 1px; }
+    .header-actions { display: flex; gap: 8px; }
+    .icon-btn { background: var(--surface2); border: 1px solid rgba(255,255,255,.08); border-radius: 8px; color: var(--muted); font-size: 15px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .icon-btn:active { opacity: .7; }
+
+    .episode-list { padding: 12px 12px calc(var(--safe-bottom)+90px); display: flex; flex-direction: column; gap: 8px; }
+    .month-label { font-size: 11px; color: var(--gold); font-weight: 600; letter-spacing: .08em; padding: 8px 4px 4px; border-bottom: 1px solid rgba(201,168,76,.2); margin-bottom: 4px; }
+    .ep-card { background: var(--surface); border: 1px solid rgba(255,255,255,.06); border-radius: var(--radius); padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; position: relative; }
+    .ep-card:active { opacity: .85; }
+    .ep-card.playing { background: var(--playing-bg); border-color: var(--playing-border); }
+    .ep-card.cached::after { content: '♪'; position: absolute; top: 8px; right: 10px; font-size: 11px; color: var(--playing-border); }
+    .ep-play { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg,#b8902a,#e8c97a); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; color: #0b0f1c; }
+    .ep-card.playing .ep-play { background: linear-gradient(135deg,#2a7a4a,#4aaa6a); }
+    .ep-spin { width: 42px; height: 42px; border-radius: 50%; border: 3px solid rgba(201,168,76,.2); border-top-color: var(--gold); animation: spin .8s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .ep-info { flex: 1; min-width: 0; }
+    .ep-issue { font-size: 11px; color: var(--gold); font-weight: 600; letter-spacing: .05em; }
+    .ep-title { font-size: 13px; font-weight: 500; line-height: 1.4; margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .ep-date { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+    .state-msg { text-align: center; padding: 60px 24px; color: var(--muted); }
+    .state-msg .icon { font-size: 40px; margin-bottom: 12px; }
+    .state-msg h3 { font-size: 16px; color: var(--text); margin-bottom: 8px; }
+    .state-msg p { font-size: 13px; line-height: 1.6; }
+    .spinner-lg { width: 48px; height: 48px; border: 4px solid rgba(201,168,76,.2); border-top-color: var(--gold); border-radius: 50%; animation: spin .9s linear infinite; margin: 0 auto 16px; }
+
+    /* Player */
+    #player-bar { display: none; position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 640px; background: var(--surface); border-top: 1px solid rgba(201,168,76,.3); padding: 10px 16px calc(var(--safe-bottom)+10px); z-index: 20; }
+    #player-bar.vis { display: block; }
+    .pl-title { font-size: 12px; color: var(--gold); font-weight: 600; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pl-controls { display: flex; align-items: center; gap: 10px; }
+    audio { display: none; }
+    .pp-btn { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg,#b8902a,#e8c97a); border: none; color: #0b0f1c; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+    .pp-btn:active { opacity: .8; }
+    .progress-wrap { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+    input[type=range] { -webkit-appearance: none; width: 100%; height: 4px; border-radius: 2px; background: rgba(255,255,255,.1); outline: none; cursor: pointer; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--gold); }
+    .progress-times { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+    .stop-btn { background: var(--surface2); border: 1px solid rgba(255,255,255,.1); color: var(--muted); border-radius: 8px; width: 34px; height: 34px; font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+
+    /* Toast */
+    #toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: rgba(20,25,40,.95); border: 1px solid rgba(201,168,76,.4); color: var(--text); font-size: 13px; padding: 10px 18px; border-radius: 20px; pointer-events: none; opacity: 0; transition: opacity .3s; white-space: nowrap; z-index: 100; max-width: 90%; text-align: center; }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- 設定画面 -->
+<div id="screen-settings" class="screen">
+  <div class="settings-card">
+    <div class="settings-logo">
+      <h1>⚙️ 初期設定</h1>
+      <p>初回のみ必要です</p>
+    </div>
+    <div class="field">
+      <label>Google クライアントID</label>
+      <input type="text" id="inp-cid" placeholder="XXXX.apps.googleusercontent.com" autocomplete="off" autocorrect="off" spellcheck="false">
+      <div class="hint">Google Cloud Console の OAuth 2.0 クライアント ID</div>
+    </div>
+    <div class="field">
+      <label>Gemini API キー</label>
+      <input type="password" id="inp-gkey" placeholder="AIzaSy...">
+      <div class="hint">Google AI Studio で取得した API キー</div>
+    </div>
+    <button class="btn-primary" onclick="saveSettings()">保存してはじめる →</button>
+  </div>
+</div>
+
+<!-- ログイン画面 -->
+<div id="screen-login" class="screen">
+  <div class="login-card">
+    <div class="login-title">宮崎正弘</div>
+    <div class="login-subtitle">国際情勢解題<br>音声ライブラリ</div>
+    <button class="btn-google" onclick="signIn()">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/><path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/><path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/><path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.3z"/></svg>
+      Google でサインイン（Gmail 読み取り）
+    </button>
+    <br>
+    <button class="btn-link" onclick="showScreen('settings')">⚙ 設定を変更する</button>
+  </div>
+</div>
+
+<!-- メイン画面 -->
+<div id="screen-main" class="screen">
+  <div class="header">
+    <div>
+      <div class="header-title">宮崎正弘 音声ライブラリ</div>
+      <div class="header-sub" id="ep-count">読み込み中...</div>
+    </div>
+    <div class="header-actions">
+      <div class="icon-btn" onclick="loadEmails()">↻</div>
+      <div class="icon-btn" onclick="showScreen('settings')">⚙</div>
+    </div>
+  </div>
+  <div id="ep-list" class="episode-list">
+    <div class="state-msg"><div class="spinner-lg"></div><p>メールを読み込んでいます…</p></div>
+  </div>
+</div>
+
+<!-- プレイヤーバー -->
+<div id="player-bar">
+  <div class="pl-title" id="pl-title">—</div>
+  <div class="pl-controls">
+    <button class="pp-btn" id="pp-btn" onclick="togglePlay()">▶</button>
+    <div class="progress-wrap">
+      <input type="range" id="prog" value="0" min="0" step="0.1" oninput="seek(this.value)">
+      <div class="progress-times"><span id="t-cur">0:00</span><span id="t-dur">0:00</span></div>
+    </div>
+    <div class="stop-btn" onclick="stopAudio()">✕</div>
+  </div>
+</div>
+<audio id="aud"></audio>
+<div id="toast"></div>
+
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script>
+'use strict';
+let gToken = null, curId = null, episodes = [];
+
+// Settings
+function getSettings() {
+  return { clientId: localStorage.getItem('mz_cid')||'', geminiKey: localStorage.getItem('mz_gkey')||'' };
+}
+function saveSettings() {
+  const cid = document.getElementById('inp-cid').value.trim();
+  const gk  = document.getElementById('inp-gkey').value.trim();
+  if (!cid || !gk) { toast('両方入力してください'); return; }
+  localStorage.setItem('mz_cid', cid);
+  localStorage.setItem('mz_gkey', gk);
+  toast('保存しました！');
+  setTimeout(() => showScreen('login'), 700);
+}
+
+// Screen
+function showScreen(n) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-'+n).classList.add('active');
+}
+
+// Init
+window.addEventListener('DOMContentLoaded', () => {
+  const {clientId,geminiKey} = getSettings();
+  if (!clientId || !geminiKey) { showScreen('settings'); return; }
+  document.getElementById('inp-cid').value = clientId;
+  document.getElementById('inp-gkey').value = geminiKey;
+  showScreen('login');
+});
+
+// Google Sign In
+function signIn() {
+  const {clientId} = getSettings();
+  if (!clientId) { showScreen('settings'); return; }
+  const c = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/gmail.readonly',
+    callback: r => {
+      if (r.error) { toast('ログイン失敗: '+r.error); return; }
+      gToken = r.access_token;
+      showScreen('main');
+      loadEmails();
+    }
+  });
+  c.requestAccessToken();
+}
+
+// Gmail
+async function gFetch(url) {
+  const r = await fetch('https://gmail.googleapis.com/gmail/v1/'+url,
+    { headers: { Authorization: 'Bearer '+gToken } });
+  if (r.status===401) { toast('ログインが切れました。再サインインしてください'); showScreen('login'); throw new Error('auth'); }
+  return r.json();
+}
+
+async function loadEmails() {
+  document.getElementById('ep-list').innerHTML =
+    '<div class="state-msg"><div class="spinner-lg"></div><p>メールを検索中…</p></div>';
+  document.getElementById('ep-count').textContent = '読み込み中...';
+  try {
+    const q = encodeURIComponent('from:mailmag@mag2tegami.com 宮崎正弘 通巻');
+    const list = await gFetch(`users/me/messages?q=${q}&maxResults=100`);
+    if (!list.messages?.length) {
+      document.getElementById('ep-list').innerHTML =
+        '<div class="state-msg"><div class="icon">📭</div><h3>メールが見つかりません</h3><p>Gmailに宮崎正弘のメールがあるか確認してください。</p></div>';
+      return;
+    }
+    const details = await Promise.all(
+      list.messages.slice(0,80).map(m => gFetch(`users/me/messages/${m.id}?format=full`).catch(()=>null))
+    );
+    episodes = details.filter(Boolean).map(parseEp).filter(e=>e.issueNum)
+      .sort((a,b)=>b.issueNum-a.issueNum);
+    // Mark cached
+    for (const ep of episodes) ep.cached = !!(await dbGet(ep.issueNum));
+    renderEps();
+    document.getElementById('ep-count').textContent = episodes.length+'件';
+  } catch(e) {
+    if (e.message!=='auth')
+      document.getElementById('ep-list').innerHTML =
+        '<div class="state-msg"><div class="icon">⚠️</div><h3>エラー</h3><p>'+e.message+'</p></div>';
+  }
+}
+
+function parseEp(msg) {
+  const subj = msg.payload?.headers?.find(h=>h.name==='Subject')?.value||'';
+  const dateH = msg.payload?.headers?.find(h=>h.name==='Date')?.value;
+  const d = dateH ? new Date(dateH) : new Date(+msg.internalDate);
+  const dateStr = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+  const body = extractBody(msg.payload);
+  const m = body.match(/通巻第[（(]?(\d+)[）)]?号/);
+  if (!m) return { issueNum: null };
+  const issueNum = parseInt(m[1]);
+
+  // Title
+  let title = subj.replace(/^Re:\s*/i,'').trim();
+  const tm = body.match(/\*{6,}\n+([^\n]{5,80})/);
+  if (tm) title = tm[1].trim();
+
+  // Article text up to marker
+  const MARKER = '□○◎☆み◎☆◎○や○☆◎○ざ☆○◎☆き☆◎☆□';
+  const idx = body.indexOf(MARKER);
+  const articleText = idx>-1 ? body.substring(0,idx+MARKER.length) : body.substring(0,4000);
+
+  return { id: msg.id, issueNum, title, dateStr, emailDate: d, articleText, cached: false };
+}
+
+function extractBody(p) {
+  if (!p) return '';
+  if (p.mimeType==='text/plain' && p.body?.data) return b64decode(p.body.data);
+  if (p.parts) for (const pt of p.parts) { const t=extractBody(pt); if(t) return t; }
+  return '';
+}
+function b64decode(s) {
+  try { const b=s.replace(/-/g,'+').replace(/_/g,'/'); return decodeURIComponent(escape(atob(b))); } catch { return ''; }
+}
+
+function renderEps() {
+  if (!episodes.length) {
+    document.getElementById('ep-list').innerHTML =
+      '<div class="state-msg"><div class="icon">📭</div><h3>エピソードがありません</h3></div>'; return;
+  }
+  let html='', lastM='';
+  for (const ep of episodes) {
+    const month = ep.emailDate ? `${ep.emailDate.getFullYear()}年${ep.emailDate.getMonth()+1}月` : '';
+    if (month!==lastM) { html+=`<div class="month-label">${month}</div>`; lastM=month; }
+    const playing = ep.issueNum===curId;
+    html+=`<div class="ep-card ${playing?'playing':''} ${ep.cached?'cached':''}"
+      id="epc-${ep.issueNum}" onclick="playEp(${ep.issueNum})">
+      <div class="ep-play">▶</div>
+      <div class="ep-info">
+        <div class="ep-issue">通巻第${ep.issueNum}号</div>
+        <div class="ep-title">${esc(ep.title)}</div>
+        <div class="ep-date">${ep.dateStr}</div>
+      </div></div>`;
+  }
+  document.getElementById('ep-list').innerHTML = html;
+}
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function playEp(issueNum) {
+  const ep = episodes.find(e=>e.issueNum===issueNum);
+  if (!ep) return;
+  const card = document.getElementById('epc-'+issueNum);
+  const pp = card?.querySelector('.ep-play');
+  if (pp) { pp.className='ep-spin'; }
+
+  try {
+    let blob = await dbGet(issueNum);
+    if (!blob) {
+      toast('音声を生成中… しばらくお待ちください（30〜60秒）');
+      blob = await genAudio(ep.articleText);
+      await dbSave(issueNum, blob);
+      ep.cached = true;
+    }
+    startPlay(URL.createObjectURL(blob), ep);
+  } catch(e) {
+    toast('エラー: '+e.message);
+  } finally {
+    renderEps();
+  }
+}
+
+async function genAudio(text) {
+  const {geminiKey} = getSettings();
+  if (!geminiKey) throw new Error('Gemini APIキーが設定されていません');
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiKey}`,
+    { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ contents:[{parts:[{text}]}],
+        generationConfig:{ responseModalities:['AUDIO'],
+          speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Achird'}}}}}) }
+  );
+  const data = await r.json();
+  if (data.error) throw new Error(data.error.message);
+  const b64 = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  if (!b64) throw new Error('音声データが取得できませんでした');
+  return pcmToWav(b64);
+}
+
+function pcmToWav(b64) {
+  const bs=atob(b64), len=bs.length, pcm=new Uint8Array(len);
+  for(let i=0;i<len;i++) pcm[i]=bs.charCodeAt(i);
+  const sr=24000, buf=new ArrayBuffer(44+len), v=new DataView(buf);
+  const w=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i));};
+  w(0,'RIFF');v.setUint32(4,36+len,true);w(8,'WAVE');w(12,'fmt ');
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);
+  v.setUint16(32,2,true);v.setUint16(34,16,true);
+  w(36,'data');v.setUint32(40,len,true);
+  new Uint8Array(buf).set(pcm,44);
+  return new Blob([buf],{type:'audio/wav'});
+}
+
+// IndexedDB
+function openDB() {
+  return new Promise((res,rej)=>{
+    const req=indexedDB.open('mz_audio_v1',1);
+    req.onupgradeneeded=e=>e.target.result.createObjectStore('audio',{keyPath:'id'});
+    req.onsuccess=e=>res(e.target.result);
+    req.onerror=rej;
+  });
+}
+async function dbGet(id) {
+  try { const db=await openDB(); return new Promise(res=>{
+    const req=db.transaction('audio','readonly').objectStore('audio').get(id);
+    req.onsuccess=e=>res(e.target.result?.blob||null); req.onerror=()=>res(null); }); }
+  catch{return null;}
+}
+async function dbSave(id, blob) {
+  try { const db=await openDB(); return new Promise((res,rej)=>{
+    const tx=db.transaction('audio','readwrite');
+    tx.objectStore('audio').put({id,blob,at:Date.now()});
+    tx.oncomplete=res; tx.onerror=rej; }); }
+  catch(e){console.warn('cache fail',e);}
+}
+
+// Player
+const aud=document.getElementById('aud');
+const pbar=document.getElementById('player-bar');
+aud.addEventListener('timeupdate',()=>{
+  if(!aud.duration)return;
+  const pg=document.getElementById('prog');
+  pg.value=aud.currentTime; pg.max=aud.duration;
+  document.getElementById('t-cur').textContent=fmt(aud.currentTime);
+  document.getElementById('t-dur').textContent=fmt(aud.duration);
+});
+aud.addEventListener('ended',()=>{document.getElementById('pp-btn').textContent='▶'; curId=null; renderEps();});
+aud.addEventListener('play',()=>document.getElementById('pp-btn').textContent='⏸');
+aud.addEventListener('pause',()=>document.getElementById('pp-btn').textContent='▶');
+
+function startPlay(url, ep) {
+  if(aud.src?.startsWith('blob:')) URL.revokeObjectURL(aud.src);
+  aud.src=url; aud.play();
+  curId=ep.issueNum;
+  document.getElementById('pl-title').textContent=`通巻第${ep.issueNum}号 ｜ ${ep.dateStr}`;
+  pbar.classList.add('vis');
+}
+function togglePlay(){ aud.paused?aud.play():aud.pause(); }
+function seek(v){ aud.currentTime=parseFloat(v); }
+function stopAudio(){ aud.pause(); aud.src=''; pbar.classList.remove('vis'); curId=null; renderEps(); }
+function fmt(s){ const m=Math.floor(s/60),ss=Math.floor(s%60).toString().padStart(2,'0'); return `${m}:${ss}`; }
+
+// Toast
+let toastT;
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),3500);
+}
+</script>
+</body>
+</html>
