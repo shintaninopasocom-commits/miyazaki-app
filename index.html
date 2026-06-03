@@ -256,7 +256,9 @@ function parseEp(msg) {
   const d = dateH ? new Date(dateH) : new Date(+msg.internalDate);
   const dateStr = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
   const body = extractBody(msg.payload);
-  const m = body.match(/通巻第[（(]?(\d+)[）)]?号/);
+  // 全角数字→半角に変換してから検索
+  const bodyN = body.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0));
+  const m = bodyN.match(/通巻第[（(]?(\d+)[）)]?号/);
   if (!m) return { issueNum: null };
   const issueNum = parseInt(m[1]);
 
