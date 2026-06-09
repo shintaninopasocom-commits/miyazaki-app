@@ -59,7 +59,9 @@
     .ep-card { background: var(--surface); border: 1px solid rgba(255,255,255,.06); border-radius: var(--radius); padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; position: relative; }
     .ep-card:active { opacity: .85; }
     .ep-card.playing { background: var(--playing-bg); border-color: var(--playing-border); }
-    .ep-card.cached::after { content: '♪'; position: absolute; top: 8px; right: 10px; font-size: 11px; color: var(--playing-border); }
+    .ep-card.cached::after { content: '♪'; position: absolute; top: 8px; right: 36px; font-size: 11px; color: var(--playing-border); }
+    .ep-regen { position: absolute; top: 6px; right: 6px; background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; padding: 2px 4px; opacity: .6; }
+    .ep-regen:active { opacity: 1; }
     .ep-play { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg,#b8902a,#e8c97a); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; color: #0b0f1c; }
     .ep-card.playing .ep-play { background: linear-gradient(135deg,#2a7a4a,#4aaa6a); }
     .ep-spin { width: 42px; height: 42px; border-radius: 50%; border: 3px solid rgba(201,168,76,.2); border-top-color: var(--gold); animation: spin .8s linear infinite; flex-shrink: 0; }
@@ -232,7 +234,7 @@ async function loadEmails() {
     const list = await gFetch(`users/me/messages?q=${q}&maxResults=100`);
     if (!list.messages?.length) {
       document.getElementById('ep-list').innerHTML =
-        '<div class="state-msg"><div class="icon">📭</div><h3>メールが見つかりません</h3><p>Gmailに宮崎正弘のメールがあるか確認してください。</p></div>';
+        '<div class="state-msg"><div class="icon">📭</div><h3>メールが見つかりません</h3><p>Gmailに宮崎正弘のメールがあるか確認してください</p></div>';
       return;
     }
     const details = await Promise.all(
@@ -255,7 +257,7 @@ function parseEp(msg) {
   const subj = msg.payload?.headers?.find(h=>h.name==='Subject')?.value||'';
   const dateH = msg.payload?.headers?.find(h=>h.name==='Date')?.value;
   const d = dateH ? new Date(dateH) : new Date(+msg.internalDate);
-  const dateStr = `${d.getFullYear()}�T${d.getMonth()+1}月${d.getDate()}日`;
+  const dateStr = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
   const body = extractBody(msg.payload);
   // 全角数字→半角に変換してから検索
   const bodyN = body.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0));
@@ -293,7 +295,7 @@ function renderEps() {
   }
   let html='', lastM='';
   for (const ep of episodes) {
-    const month = ep.emailDate ? `${ep.emailDate.getFullYear()}年${ep.emailDate.getMonth()+1}月` : '';
+    const month = ep.emailDate ? `${ep.emailDate.getFullYear()}ڞT${ep.emailDate.getMonth()+1}月` : '';
     if (month!==lastM) { html+=`<div class="month-label">${month}</div>`; lastM=month; }
     const playing = ep.issueNum===curId;
     html+=`<div class="ep-card ${playing?'playing':''} ${ep.cached?'cached':''}"
@@ -303,7 +305,7 @@ function renderEps() {
         <div class="ep-issue">通巻第${ep.issueNum}号</div>
         <div class="ep-title">${esc(ep.title)}</div>
         <div class="ep-date">${ep.dateStr}</div>
-      </div></div>`;
+      </div>${ep.cached?`<button class="ep-regen" onclick="event.stopPropagation();regenEp(${ep.issueNum})" title="再生成">🔄</button>`:''}</div>`;
   }
   document.getElementById('ep-list').innerHTML = html;
 }
@@ -319,7 +321,7 @@ async function playEp(issueNum) {
   try {
     let blob = await dbGet(issueNum);
     if (!blob) {
-      toast('音声を生成中… しばらくお待ちください（30〜60秒）');
+      toast('音声を生成中… しばら���お待ちください（30〜60秒）');
       try {
         blob = await genAudio(ep.articleText);
         await dbSave(issueNum, blob);
@@ -350,6 +352,16 @@ function isQuotaError(msg) {
   return m.includes('quota') || m.includes('exceeded') || m.includes('billing') || m.includes('resource_exhausted');
 }
 
+async function regenEp(issueNum) {
+  const ep = episodes.find(e=>e.issueNum===issueNum);
+  if (!ep) return;
+  if (!confirm(`第${issueNum}号の音声を再生成します。既存のキャッシュを削除してよいですか？`)) return;
+  await dbDelete(issueNum);
+  ep.cached = false;
+  renderEps();
+  playEp(issueNum);
+}
+
 function playWithSpeech(ep) {
   if (!window.speechSynthesis) { toast('この端末では音声合成が使えません'); return; }
   stopAudio();
@@ -378,24 +390,56 @@ function playWithSpeech(ep) {
 async function genAudio(text) {
   const {geminiKey} = getSettings();
   if (!geminiKey) throw new Error('Gemini APIキーが設定されていません');
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiKey}`,
-    { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ contents:[{parts:[{text}]}],
-        generationConfig:{ responseModalities:['AUDIO'],
-          speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Achird'}}}}}) }
-  );
-  const data = await r.json();
-  if (data.error) throw new Error(data.error.message);
-  const b64 = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  if (!b64) throw new Error('音声データが取得できませんでした');
-  return pcmToWav(b64);
+
+  // テキストを400文字以内の句読点単位で分割（API打ち切り対策）
+  const CHUNK = 400;
+  const chunks = [];
+  let rem = text.trim();
+  while (rem.length > 0) {
+    if (rem.length <= CHUNK) { chunks.push(rem); break; }
+    let cut = CHUNK;
+    const p = rem.substring(0, CHUNK).lastIndexOf('。');
+    if (p > CHUNK / 2) cut = p + 1;
+    chunks.push(rem.substring(0, cut));
+    rem = rem.substring(cut).trim();
+  }
+
+  // チャンクごとにAPI呼び出してPCMデータを収集
+  const pcmParts = [];
+  for (const chunk of chunks) {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiKey}`,
+      { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ contents:[{parts:[{text:chunk}]}],
+          generationConfig:{ responseModalities:['AUDIO'],
+            speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Achird'}}}}}) }
+    );
+    const data = await r.json();
+    if (data.error) throw new Error(data.error.message);
+    const b64 = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!b64) throw new Error('音声データが取得できませんでした');
+    const bs = atob(b64);
+    const pcm = new Uint8Array(bs.length);
+    for (let i = 0; i < bs.length; i++) pcm[i] = bs.charCodeAt(i);
+    pcmParts.push(pcm);
+  }
+
+  // 全チャンクのPCMを結合してWAVに変換
+  return pcmToWav(pcmParts);
 }
 
-function pcmToWav(b64) {
-  const bs=atob(b64), len=bs.length, pcm=new Uint8Array(len);
-  for(let i=0;i<len;i++) pcm[i]=bs.charCodeAt(i);
-  const sr=24000, buf=new ArrayBuffer(44+len), v=new DataView(buf);
+function pcmToWav(pcmParts) {
+  // 旧来のbase64文字列にも対応
+  let pcm;
+  if (typeof pcmParts === 'string') {
+    const bs=pcmParts, len=bs.length; pcm=new Uint8Array(len);
+    for(let i=0;i<len;i++) pcm[i]=bs.charCodeAt(i);
+  } else {
+    const total = pcmParts.reduce((s,p)=>s+p.length,0);
+    pcm = new Uint8Array(total);
+    let off=0; for(const p of pcmParts){pcm.set(p,off);off+=p.length;}
+  }
+  const len=pcm.length, sr=24000, buf=new ArrayBuffer(44+len), v=new DataView(buf);
   const w=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i));};
   w(0,'RIFF');v.setUint32(4,36+len,true);w(8,'WAVE');w(12,'fmt ');
   v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
@@ -428,53 +472,7 @@ async function dbSave(id, blob) {
     tx.oncomplete=res; tx.onerror=rej; }); }
   catch(e){console.warn('cache fail',e);}
 }
-
-// Player
-const aud=document.getElementById('aud');
-const pbar=document.getElementById('player-bar');
-aud.addEventListener('timeupdate',()=>{
-  if(!aud.duration)return;
-  const pg=document.getElementById('prog');
-  pg.value=aud.currentTime; pg.max=aud.duration;
-  document.getElementById('t-cur').textContent=fmt(aud.currentTime);
-  document.getElementById('t-dur').textContent=fmt(aud.duration);
-});
-aud.addEventListener('ended',()=>{document.getElementById('pp-btn').textContent='▶'; curId=null; renderEps();});
-aud.addEventListener('play',()=>document.getElementById('pp-btn').textContent='⏸');
-aud.addEventListener('pause',()=>document.getElementById('pp-btn').textContent='▶');
-
-function startPlay(url, ep) {
-  if(aud.src?.startsWith('blob:')) URL.revokeObjectURL(aud.src);
-  aud.src=url; aud.play();
-  curId=ep.issueNum;
-  document.getElementById('pl-title').textContent=`通巻第${ep.issueNum}号 ｜ ${ep.dateStr}`;
-  pbar.classList.add('vis');
-}
-function togglePlay(){
-  if (synthMode) {
-    if (speechSynthesis.paused) { speechSynthesis.resume(); document.getElementById('pp-btn').textContent='⏸'; }
-    else { speechSynthesis.pause(); document.getElementById('pp-btn').textContent='▶'; }
-  } else {
-    aud.paused ? aud.play() : aud.pause();
-  }
-}
-function seek(v){ if (!synthMode) aud.currentTime=parseFloat(v); }
-function stopAudio(){
-  if (synthMode) { speechSynthesis.cancel(); synthMode=false; currentUtt=null; }
-  aud.pause();
-  if(aud.src?.startsWith('blob:')) URL.revokeObjectURL(aud.src);
-  aud.src='';
-  pbar.classList.remove('vis'); curId=null; renderEps();
-}
-function fmt(s){ const m=Math.floor(s/60),ss=Math.floor(s%60).toString().padStart(2,'0'); return `${m}:${ss}`; }
-
-// Toast
-let toastT;
-function toast(msg){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.classList.add('show');
-  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),3500);
-}
-</script>
-</body>
-</html>
+async function dbDelete(id) {
+  try { const db=await openDB(); return new Promise((res,rej)=>{
+    const tx=db.transaction('audio','readwrite');
+    tx.objectStore('aud
