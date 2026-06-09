@@ -83,7 +83,7 @@
     audio { display: none; }
     .pp-btn { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg,#b8902a,#e8c97a); border: none; color: #0b0f1c; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
     .pp-btn:active { opacity: .8; }
-    .progress-wrap { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+    .progress-wrap { flex: 1; display: flex; flex-direction: column; gap: 3pz; }
     input[type=range] { -webkit-appearance: none; width: 100%; height: 4px; border-radius: 2px; background: rgba(255,255,255,.1); outline: none; cursor: pointer; }
     input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--gold); }
     .progress-times { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
@@ -167,6 +167,7 @@
 <script>
 'use strict';
 let gToken = null, curId = null, episodes = [];
+let synthMode = false, currentUtt = null;
 
 // Settings
 function getSettings() {
@@ -254,7 +255,7 @@ function parseEp(msg) {
   const subj = msg.payload?.headers?.find(h=>h.name==='Subject')?.value||'';
   const dateH = msg.payload?.headers?.find(h=>h.name==='Date')?.value;
   const d = dateH ? new Date(dateH) : new Date(+msg.internalDate);
-  const dateStr = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+  const dateStr = `${d.getFullYear()}�t${d.getMonth()+1}月${d.getDate()}日`;
   const body = extractBody(msg.payload);
   // 全角数字→半角に変換してから検索
   const bodyN = body.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0));
@@ -319,105 +320,148 @@ async function playEp(issueNum) {
     let blob = await dbGet(issueNum);
     if (!blob) {
       toast('音声を生成中… しばらくお待ちください（30〜60秒）');
-      blob = await genAudio(ep.articleText);
-      await dbSave(issueNum, blob);
-      ep.cached = true;
-    }
-    startPlay(URL.createObjectURL(blob), ep);
-  } catch(e) {
-    toast('エラー: '+e.message);
-  } finally {
-    renderEps();
-  }
-}
+      try {
+        blob = await genAudio(ep.articleText);
+        await dbSave(issueNum, blob);
+        ep.cached = true;
+        synthMode = false;
+        startPlay(URL.createObjectURL(blob), ep);
+      } catch(geminiErr) {
+        if (isQuotaError(geminiErr.message)) {
+          toast('APIの上限に達しました。ブラウザ内蔵音声�i�a�y�'��e��o��fI�N^U�]�YX�
+\
+NH[�H����[Z[�Q\��B�B�H[�H�[�[�HH�[�N�\�^JT��ܙX]Sؚ�X�T�
+�؊K\
+NB�H�]�
+JH�\�
+	��8��x���	��K�Y\��Y�JNH�[�[H�[�\�\�
+NB�B���[��[ۈ\�][�Q\��܊\��H�ۜ�HH
+\��	��K����\��\�J
+N�]\��K�[��Y\�	�][�I�HK�[��Y\�	�^�YYY	�HK�[��Y\�	ؚ[[���HK�[��Y\�	ܙ\��\��W�^]\�Y	�NB���[��[ۈ^U�]�YX�
+\
+HY�
+]�[��˜�YX��[�\�\�H��\�
+	��d��k�����*��i��k�g��h�9d"9�$8�c9/o��b8�o��f����N��]\���B���]Y[�
+N�[�[�HH�YN�\�YH\�\��YS�[N�[��˜�YX��[�\�\˘�[��[
 
-async function genAudio(text) {
-  const {geminiKey} = getSettings();
-  if (!geminiKey) throw new Error('Gemini APIキーが設定されていません');
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiKey}`,
-    { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ contents:[{parts:[{text}]}],
-        generationConfig:{ responseModalities:['AUDIO'],
-          speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Achird'}}}}}) }
-  );
-  const data = await r.json();
-  if (data.error) throw new Error(data.error.message);
-  const b64 = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  if (!b64) throw new Error('音声データが取得できませんでした');
-  return pcmToWav(b64);
-}
+N�ۜ�]H�]��YX��[�\�\�]\�[��J\�\�X�U^
+N]�[��H	ژKR�	�]��]HHK��\��[�]H]�ۜ���XZ�H
 
-function pcmToWav(b64) {
-  const bs=atob(b64), len=bs.length, pcm=new Uint8Array(len);
-  for(let i=0;i<len;i++) pcm[i]=bs.charCodeAt(i);
-  const sr=24000, buf=new ArrayBuffer(44+len), v=new DataView(buf);
-  const w=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i));};
-  w(0,'RIFF');v.setUint32(4,36+len,true);w(8,'WAVE');w(12,'fmt ');
-  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
-  v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);
-  v.setUint16(32,2,true);v.setUint16(34,16,true);
-  w(36,'data');v.setUint32(40,len,true);
-  new Uint8Array(buf).set(pcm,44);
-  return new Blob([buf],{type:'audio/wav'});
-}
+HO��ۜ���X�\�H�YX��[�\�\˙�]��X�\�
+N�ۜ��HH��X�\˙�[�
+�O���[��OOH	ژKR�	�H��X�\˙�[�
+�O���[�˜�\���]
+	ژI�JNY�
+�JH]���X�HH�N�YX��[�\�\˜�XZ�]
+NNY�
+�YX��[�\�\˙�]��X�\�
+K�[���
+H��XZ�
+N[�H��YX��[�\�\˛۝��X�\��[��YH��XZ��B���[Y[���][[Y[��RY
+	�]]I�K�^�۝[�H:`&�m���+	�\�\��YS�[_yc���"8����x੸୺g��h�;�"X��[Y[���][[Y[��RY
+	�^Y\�X�\��K��\��\��Y
+	ݚ\��N��[Y[���][[Y[��RY
+	�X���K�^�۝[�H	���	�]�ۙ[�H
 
-// IndexedDB
-function openDB() {
-  return new Promise((res,rej)=>{
-    const req=indexedDB.open('mz_audio_v1',1);
-    req.onupgradeneeded=e=>e.target.result.createObjectStore('audio',{keyPath:'id'});
-    req.onsuccess=e=>res(e.target.result);
-    req.onerror=rej;
-  });
-}
-async function dbGet(id) {
-  try { const db=await openDB(); return new Promise(res=>{
-    const req=db.transaction('audio','readonly').objectStore('audio').get(id);
-    req.onsuccess=e=>res(e.target.result?.blob||null); req.onerror=()=>res(null); }); }
-  catch{return null;}
-}
-async function dbSave(id, blob) {
-  try { const db=await openDB(); return new Promise((res,rej)=>{
-    const tx=db.transaction('audio','readwrite');
-    tx.objectStore('audio').put({id,blob,at:Date.now()});
-    tx.oncomplete=res; tx.onerror=rej; }); }
-  catch(e){console.warn('cache fail',e);}
-}
+HO���[�[�HH�[�N��\��[�]H�[��\�YH�[���[Y[���][[Y[��RY
+	�X���K�^�۝[�H	�������[�\�\�
+N�N�[�\�\�
+NB��\�[���[��[ۈ�[�]Y[�^
+H�ۜ���[Z[�R�^_HH�]�][���
+NY�
+Y�[Z[�R�^JH����]�\��܊	��[Z[�HTx�x��8�c:*+yk���ex�8�i��a8�o��f����N�ۜ��H]�Z]�]�
+�΋���[�\�]]�[[��XY�K�����X\\˘��K݌X�]K�[�[���[Z[�KL��KY�\�\�]�Y]�]Ι�[�\�]P�۝[���^OI��[Z[�R�^_X��Y]�����	�XY\�Ξ���۝[�U\IΉ�\X�][ۋڜ�ۉ�K���N���Ӌ���[��Y�J��۝[�Ζ��\�Ζ��^W_WK��[�\�][ې�ۙ�YΞ��\�ۜ�S[�[]Y\Ζ��UQS��K��YX��ۙ�YΞݛ�X�P�ۙ�YΞ��X�Z[��X�P�ۙ�YΞݛ�X�S�[YN��X�\�	�____JHB�
+N�ۜ�]HH]�Z]����ۊ
+NY�
+]K�\��܊H����]�\��܊]K�\��܋�Y\��Y�JN�ۜ���H]O˘�[�Y]\�˖�O˘�۝[�˜\��˖�O˚[�[�Q]O˙]NY�
+X��
+H����]�\��܊	�g��h�8�����8���c9c�o���i��cx�o��f����i��e��g��N�]\���U��]���
+NB���[��[ۈ�U��]���
+H�ۜ���X]؊��
+K[�X�˛[���O[�]�Z[�\��^J[�N�܊]OL�O[��J��H�V�WOX�˘�\���P]
+JN�ۜ�܏L��Y�[�]�\��^P�Y��\�
 
-// Player
-const aud=document.getElementById('aud');
-const pbar=document.getElementById('player-bar');
-aud.addEventListener('timeupdate',()=>{
-  if(!aud.duration)return;
-  const pg=document.getElementById('prog');
-  pg.value=aud.currentTime; pg.max=aud.duration;
-  document.getElementById('t-cur').textContent=fmt(aud.currentTime);
-  document.getElementById('t-dur').textContent=fmt(aud.duration);
-});
-aud.addEventListener('ended',()=>{document.getElementById('pp-btn').textContent='▶'; curId=null; renderEps();});
-aud.addEventListener('play',()=>document.getElementById('pp-btn').textContent='⏸');
-aud.addEventListener('pause',()=>document.getElementById('pp-btn').textContent='▶');
+�[�K�[�]�]U�Y]��Y�N�ۜ��J�
+OO�ٛ܊]OL�O�[���J��]���]Z[�
+��K��\���P]
+JJN�N�	ԒQ���N݋��]Z[�̊
+͊�[��YJN��	��U�I�N��L�	ٛ]	�N���]Z[�̊M�M��YJN݋��]Z[�M��K�YJN݋��]Z[�M���K�YJN���]Z[�̊�܋�YJN݋��]Z[�̊�܊���YJN���]Z[�M�̋��YJN݋��]Z[�M��M��YJN�͋	�]I�N݋��]Z[�̊
+[��YJN�]�Z[�\��^J�Y�K��]
+�K
 
-function startPlay(url, ep) {
-  if(aud.src?.startsWith('blob:')) URL.revokeObjectURL(aud.src);
-  aud.src=url; aud.play();
-  curId=ep.issueNum;
-  document.getElementById('pl-title').textContent=`通巻第${ep.issueNum}号 ｜ ${ep.dateStr}`;
-  pbar.classList.add('vis');
-}
-function togglePlay(){ aud.paused?aud.play():aud.pause(); }
-function seek(v){ aud.currentTime=parseFloat(v); }
-function stopAudio(){ aud.pause(); aud.src=''; pbar.classList.remove('vis'); curId=null; renderEps(); }
-function fmt(s){ const m=Math.floor(s/60),ss=Math.floor(s%60).toString().padStart(2,'0'); return `${m}:${ss}`; }
+N�]\���]��؊؝Y�K�\N��]Y[���]��JNB����[�^Y���[��[ۈ�[��
+H�]\���]���Z\�J
+�\��Z�OO��ۜ��\OZ[�^Y���[�	�^��]Y[�݌I�JN�\K�۝\ܘY[�YYYYOO�K�\��]��\�[�ܙX]Sؚ�X��ܙJ	�]Y[����^T]��Y	�JN�\K�ۜ�X��\��YOO��\�K�\��]��\�[
+N�\K�ۙ\��܏\�Z�JNB�\�[���[��[ۈ��]
+Y
+H�H��ۜ��X]�Z]�[��
+N��]\���]���Z\�J�\�O��ۜ��\OY���[��X�[ۊ	�]Y[��	ܙXYۛI�K�ؚ�X��ܙJ	�]Y[��K��]
+Y
+N�\K�ۜ�X��\��YOO��\�K�\��]��\�[˘�؟�[
+N��\K�ۙ\��܏J
+OO��\��[
+N�JN�B��]�ܙ]\���[�B�B�\�[���[��[ۈ��]�JY�؊H�H��ۜ��X]�Z]�[��
+N��]\���]���Z\�J
+�\��Z�OO��ۜ�Y���[��X�[ۊ	�]Y[��	ܙXYܚ]I�N�ؚ�X��ܙJ	�]Y[��K�]
+�Y�؋]�]K����
+_JN�ۘ��\]O\�\���ۙ\��܏\�Z��JN�B��]�
+J^��ۜ��K��\��	��X�H�Z[	�JN�B�B����^Y\���ۜ�]YY��[Y[���][[Y[��RY
+	�]Y	�N�ۜ��\�Y��[Y[���][[Y[��RY
+	�^Y\�X�\��N]Y�Y]�[�\�[�\�	�[Y]\]I�
 
-// Toast
-let toastT;
-function toast(msg){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.classList.add('show');
-  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),3500);
-}
-</script>
-</body>
-</html>
+OO�Y�X]Y�\�][ۊ\�]\���ۜ��Y��[Y[���][[Y[��RY
+	�����N˝�[YOX]Y��\��[�[YN�˛X^X]Y�\�][ێ��[Y[���][[Y[��RY
+	�X�\��K�^�۝[�Y�]
+]Y��\��[�[YJN��[Y[���][[Y[��RY
+	�Y\��K�^�۝[�Y�]
+]Y�\�][ۊNJN]Y�Y]�[�\�[�\�	�[�Y	�
+
+OO����[Y[���][[Y[��RY
+	�X���K�^�۝[�I�������\�Y[�[��[�\�\�
+N�JN]Y�Y]�[�\�[�\�	�^I�
+
+OO���[Y[���][[Y[��RY
+	�X���K�^�۝[�I���	�N]Y�Y]�[�\�[�\�	�]\�I�
+
+OO���[Y[���][[Y[��RY
+	�X���K�^�۝[�I�����N��[��[ۈ�\�^J\�\
+HY�]Y�ܘ�˜�\���]
+	؛؎��JHT���]���Sؚ�X�T�
+]Y�ܘ�N]Y�ܘ�]\��]Y�^J
+N�\�YY\�\��YS�[N��[Y[���][[Y[��RY
+	�]]I�K�^�۝[�X:`&�m���+	�\�\��YS�[_yc��;�g	�\�]T��X�\���\��\��Y
+	ݚ\��NB��[��[ۈ���T^J
+^Y�
+�[�[�JHY�
+�YX��[�\�\˜]\�Y
+H��YX��[�\�\˜�\�[YJ
+N���[Y[���][[Y[��RY
+	�X���K�^�۝[�I���	��B�[�H��YX��[�\�\˜]\�J
+N���[Y[���][[Y[��RY
+	�X���K�^�۝[�I������B�H[�H]Y�]\�Y�]Y�^J
+H�]Y�]\�J
+NB�B��[��[ۈ�YZ��^�Y�
+\�[�[�JH]Y��\��[�[YO\\��Q��]
+�N�B��[��[ۈ��]Y[�
+^Y�
+�[�[�JH��YX��[�\�\˘�[��[
+
+N��[�[�OY�[�N��\��[�][�[�B�]Y�]\�J
+NY�]Y�ܘ�˜�\���]
+	؛؎��JHT���]���Sؚ�X�T�
+]Y�ܘ�N]Y�ܘ�I���\���\��\���[[ݙJ	ݚ\��N��\�Y[�[��[�\�\�
+NB��[��[ۈ�]
+�^��ۜ�OSX]���܊�͌
+K��SX]���܊�M�
+K����[��
+K�Y�\�
+�	�	�N��]\��	�_N����X�B�����\��]�\��[��[ۈ�\�
+\��^�ۜ�Y��[Y[���][[Y[��RY
+	��\�	�N�^�۝[�[\�����\��\��Y
+	�����N�X\�[Y[�]
+�\�
+N��\�\�][Y[�]
+
+
+OO���\��\���[[ݙJ	�����K�L
+NB���ܚ\��؛�O���[�
