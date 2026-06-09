@@ -234,7 +234,7 @@ async function loadEmails() {
     const list = await gFetch(`users/me/messages?q=${q}&maxResults=100`);
     if (!list.messages?.length) {
       document.getElementById('ep-list').innerHTML =
-        '<div class="state-msg"><div class="icon">📭</div><h3>メールが見つかりません</h3><p>Gmailに宮崎正弘のメールがあるか確認してください</p></div>';
+        '<div class="state-msg"><div class="icon">📭</div><h3>メールが見つかりません</h3><p>Gmailに宮崎正弘のメールがあるか確認してください。</p></div>';
       return;
     }
     const details = await Promise.all(
@@ -321,7 +321,7 @@ async function playEp(issueNum) {
   try {
     let blob = await dbGet(issueNum);
     if (!blob) {
-      toast('音声を生成中… しばら���お待ちください（30〜60秒）');
+      toast('音声を生成中… しばらくお待ちください（30〜60秒）');
       try {
         blob = await genAudio(ep.articleText);
         await dbSave(issueNum, blob);
@@ -475,4 +475,57 @@ async function dbSave(id, blob) {
 async function dbDelete(id) {
   try { const db=await openDB(); return new Promise((res,rej)=>{
     const tx=db.transaction('audio','readwrite');
-    tx.objectStore('aud
+    tx.objectStore('audio').delete(id);
+    tx.oncomplete=res; tx.onerror=rej; }); }
+  catch(e){console.warn('cache del fail',e);}
+}
+
+// Player
+const aud=document.getElementById('aud');
+const pbar=document.getElementById('player-bar');
+aud.addEventListener('timeupdate',()=>{
+  if(!aud.duration)return;
+  const pg=document.getElementById('prog');
+  pg.value=aud.currentTime; pg.max=aud.duration;
+  document.getElementById('t-cur').textContent=fmt(aud.currentTime);
+  document.getElementById('t-dur').textContent=fmt(aud.duration);
+});
+aud.addEventListener('ended',()=>{document.getElementById('pp-btn').textContent='▶'; curId=null; renderEps();});
+aud.addEventListener('play',()=>document.getElementById('pp-btn').textContent='⏸');
+aud.addEventListener('pause',()=>document.getElementById('pp-btn').textContent='▶');
+
+function startPlay(url, ep) {
+  if(aud.src?.startsWith('blob:')) URL.revokeObjectURL(aud.src);
+  aud.src=url; aud.play();
+  curId=ep.issueNum;
+  document.getElementById('pl-title').textContent=`通巻第${ep.issueNum}号 ｜ ${ep.dateStr}`;
+  pbar.classList.add('vis');
+}
+function togglePlay(){
+  if (synthMode) {
+    if (speechSynthesis.paused) { speechSynthesis.resume(); document.getElementById('pp-btn').textContent='⏸'; }
+    else { speechSynthesis.pause(); document.getElementById('pp-btn').textContent='▶'; }
+  } else {
+    aud.paused ? aud.play() : aud.pause();
+  }
+}
+function seek(v){ if (!synthMode) aud.currentTime=parseFloat(v); }
+function stopAudio(){
+  if (synthMode) { speechSynthesis.cancel(); synthMode=false; currentUtt=null; }
+  aud.pause();
+  if(aud.src?.startsWith('blob:')) URL.revokeObjectURL(aud.src);
+  aud.src='';
+  pbar.classList.remove('vis'); curId=null; renderEps();
+}
+function fmt(s){ const m=Math.floor(s/60),ss=Math.floor(s%60).toString().padStart(2,'0'); return `${m}:${ss}`; }
+
+// Toast
+let toastT;
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),3500);
+}
+</script>
+</body>
+</html>
